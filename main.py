@@ -2,6 +2,7 @@ import pandas as pd
 from dateutil import parser
 from datetime import datetime
 import os
+import re
 
 INPUT_FOLDER = 'input'
 OUTPUT_FOLDER = 'output'
@@ -54,6 +55,11 @@ def get_header_alias(header, headers):
 		
 	return None
 
+def translate_radians_to_degrees(value, header):
+	if 'rad' in header.lower() or 'radians' in header.lower():
+		return value * (180 / 3.141592653589793) # convert radians to degrees
+	return value
+
 def correct_timestamp(timestamp):
 	input_datetime = parser.parse(timestamp)
 	output_datetime = input_datetime.strftime(TIMESTAMP_FORMAT)
@@ -77,10 +83,15 @@ def process_data(input_data, file_name):
 	for header in output_headers:
 		alias = get_header_alias(header, headers)
 
+		if alias is not None and header in ['Heading', 'Pitch', 'Roll']:
+			output_data[header] = input_data[alias].apply(lambda x: translate_radians_to_degrees(x, alias))
+			continue
 		if alias is not None:
 			output_data[header] = input_data[alias]
+			continue
 		if alias is None and header == 'Row Name':
 			output_data[header] = input_data.index
+			continue
 		if alias is None and header == 'Vehicle':
 			vehicle = ''
 			if 'atalanta' in file_name.lower():
@@ -88,6 +99,7 @@ def process_data(input_data, file_name):
 			elif 'hercules' in file_name.lower():
 				vehicle = 'Hercules'
 			output_data[header] = vehicle
+			continue
 	
 	if 'Timestamp' in output_headers:
 		output_data['Timestamp'] = output_data['Timestamp'].apply(lambda x: correct_timestamp(x))
@@ -96,6 +108,30 @@ def process_data(input_data, file_name):
 		output_data['Depth'] = output_data['Depth'].apply(lambda x: correct_depth(x))
 
 	return output_data
+
+def try_correcting_file_name(output_data, file_name):
+	result = "DT_"
+
+	match = re.search(r'H\d{4}', file_name)
+	if match:
+		result += match.group(0) + "_"
+	else:
+		return file_name
+	
+	if 'atalanta' in file_name.lower():
+		result += "AtalantaData"
+		return result
+	elif 'hercules' in file_name.lower():
+		result += "HerculesData"
+		return result
+	else:
+		# search for any vehicle name in output_data['Vehicle'] if it exists
+		if 'Vehicle' in output_data.columns:
+			vehicles = output_data['Vehicle'].dropna().unique()
+			for vehicle in vehicles:
+				result += str(vehicle) + "Data"
+				return result
+	return file_name
 
 def write_data(file_path, data, delimiter):
 	data.to_csv(file_path, sep=delimiter, index=False)
@@ -121,7 +157,9 @@ def main():
 		input_data = read_data(os.path.join(INPUT_FOLDER, file_name), delimiter)
 		output_data = process_data(input_data, file_name)
 
-		write_data(os.path.join(OUTPUT_FOLDER, name + '_processed' + ext), output_data, ',')
+		name = try_correcting_file_name(output_data, file_name)
+
+		write_data(os.path.join(OUTPUT_FOLDER, name + ext), output_data, ',')
 
 
 if __name__ == '__main__':
