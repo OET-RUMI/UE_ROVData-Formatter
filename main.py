@@ -112,11 +112,15 @@ def process_data(input_data, file_name):
 def try_correcting_file_name(output_data, file_name):
 	result = "DT_"
 
-	match = re.search(r'H\d{4}', file_name)
+	match = re.search(r'(H\d{4})([A-Za-z])', file_name)
 	if match:
-		result += match.group(0) + "_"
+		result += match.group(1) + match.group(2).lower() + "_"
 	else:
-		return file_name
+		match = re.search(r'H\d{4}', file_name)
+		if match:
+			result += match.group(0) + "_"
+		else:
+			return file_name
 	
 	if 'atalanta' in file_name.lower():
 		result += "AtalantaData"
@@ -129,6 +133,10 @@ def try_correcting_file_name(output_data, file_name):
 		if 'Vehicle' in output_data.columns:
 			vehicles = output_data['Vehicle'].dropna().unique()
 			for vehicle in vehicles:
+				# bad override to match existing naming convention
+				if vehicle.lower() == "hercules":
+					result += "HercData"
+					return result
 				result += str(vehicle) + "Data"
 				return result
 	return file_name
